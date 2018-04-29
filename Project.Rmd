@@ -1,0 +1,222 @@
+---
+title: "PS 230 Project"
+author: "Matt Watson"
+date: "December 15, 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Estimating Points Per Game for the Top 500 NBA Players of All time
+
+## Question of Thesis & Motivation for Research
+
+For this project, I will be analyzing a data set of the "Greatest 500 NBA Players of All Time" in order to find the best predictors for PTS, career average points per game. When ranking players in the NBA, the first variable of importance that comes to mind would likely be Points, as those who are viewed as the best players are often the ones who get a lot of points per game. I hope that by analyzing the relationship between PTS and the other variables in the data set, such as Minutes Played and Shooting Percentage, I will be able to better determine what makes a "great" player.
+
+First off, I will estimate what I think will be the best predictors, and create a linear model containing them as predictors for PTS. Then, my approach to finding the best set of predictors will start by creating a "Full model," in which PTS will be estimated through a covariance adjusted model with all of the other variables in the data set used as predictors. After this, I will create a "Reduced Model," removing the predictors that were not significant in the "Full Model." Then, I will use Akaike Information Criterion (AIC) to select a model. This method of selection creates many models, and then compares them to the full model. The best model is determined as the one with the lowest AIC score. AIC variable selection also requires the data to have no missing values, so this model will show how the 3 point line changed scoring. Last, I will use Bayesian Information Criterion (BIC) to select a model, which is similar to AIC, but prefers smaller models.
+
+## Data
+
+The data I will be using can be found at: https://www.basketball-reference.com/awards/slam_500_greatest.html. 
+
+```{r InstallPackages, eval=F,echo=F}
+install.packages("readxl")
+```
+
+```{r LoadData, eval=T,echo=F}
+library(readxl)
+NBA2017 <- read_excel("~/PS 230/NBA.xlsx")
+View(NBA2017)
+```
+
+The data was downloaded on November 2 2017. This is worth noting, as there are some active players on this list, whose stats will change slightly throughout the season. The original data set has 16 variables for 500 NBA players. The variable are:
+
+Rank    
+Player Name
+From   -   The year the player's career started,
+To     -   The year the player's career ended,
+G      -   Total games played in career,
+MP     -   Career average minutes played per game,
+PTS    -   Career average points per game,
+TRB    -   Career average total rebounds per game,
+AST    -   Career average assists per game,
+STL    -   Career average steals per game,
+BLK    -   Career average blocks per game,
+FGpct  -   Career average field goal percentage,
+3Ppct  -   Career average three point percentage,
+FTpct  -   Career average free throw percentage,
+WS     -   Win Shares (An estimate of the number of wins contributed by a player),
+WS/48  -   Win Shares per 48 Minutes (An estimate of the number of wins contributed by a player per 48 minutes)
+
+For my analysis, I removed 4 of these variables from the data set: Rank, Player Name, From and To. This process was done through Microsoft Excel, by dowloading a ".csv" file from the link provided. I do not need these variables for the analysis intended. It would be useful if there was a variable for position included in the data, as $PTS$ seems likes it would vary by position. There is not however, and since players often switch positions, it would be difficult to go through and add this variable for each player.
+
+As the title says, the response variable I will be using is $PTS$. The predictors I will be using include: $G, MP, TRB, AST, STL, BLK, FGpct, 3Ppct, FTpct, WS and WS/48$. All of these variables are numerical. It is worth noting that $STL$, $BLK$ and $3Ppct$ have some $NA$ responses, as $STL$ and $BLK$ were not recorded until 1973, and the 3-Point line was not used until 1979. It is also worth noting that $WS$ and $WS/48$ are advanced statistics that are not commonly used. I will be creating as subset of that to remvoe all missing values, which will allow me to see how the 3 point line chagned scoring in the NBA.
+
+```{r ResponseVariable, eval=T, echo=F}
+hist(NBA2017$PTS, main="Points Distribution", xlab="PTS", col="dodgerblue")
+boxplot(NBA2017$PTS, main="Points Distribution", xlab="PTS")
+summary(NBA2017$PTS)
+sd(NBA2017$PTS)
+```
+
+Above are some results looking at $PTS$. From the histogram, it looks like $PTS$ is roughly normally distributed, with a mean of 14.7 and a standard deviation of 4.178. We see that $PTS$ has a range of (2.6, 30.1). Looking at the boxplot, there are some points that could potentially be outliers, especailly the max and min values.
+
+```{r SummaryStats, eval=T, echo=F}
+summary(NBA2017)
+```
+
+Here, we see descriptive statistics for each of the variables. We see that $G$ ranges from 260 to 1611 games played with a mean of 834.7 games. $MP$ ranges from 18.70 to 45.80 minutes per game with a mean of 30.54 minutes. $TRB$ ranges from 1.7 to 22.9 rebounds per game with a mean of 5.948 rebounds. $AST$ ranges from 0.3 to 11.2 assists per game with a mean of 3.213 assists. $STL$ ranges from 0.2 to 2.7 steals per game with a mean of 1.049 stealas. $BLK$ ranges from 0.0 to 3.5 blocks per game with a mean of 0.6083 blocks. $FGpct$ ranges from 0.3020 to 0.599 percent with a median of 0.4641 percent. $3Ppct$ ranges from 0.0 to 1.0 percent with a mean of 0.2551 percent. $FTpct$ ranges from 0.4140 to 0.9050 percent with a mean of 0.7614 percent. $WS$ ranges from -7.9 to 273.4 wins with a mean of 58.65 wins. $WS/48$ ranges from -0.045 to 0.25 wins per 48 with a mean of 0.1181 wins per 48. 
+
+## Expectations
+
+If I had to guess which variables I think will be best for predicting $PTS$ (Points), I would say $G$ (Games), $MP$ (Minutes Played), $TRB$ (Total Rebounds), $FGpct$ (Field goal Percentage) and $FTpct$ (Free throw Percentage). $G$ seems like it should have a positive relationship with $PTS$, as players who are good at scoring tend to player more games. $MP$ seems like it should have a positive relationship with $PTS$, as the more time you in play in the game, the more points you should score. $TRB$ should have a positive relationship with $PTS$ as well, as getting an offensive rebound likely increases your chance of scoring. $FGpct$ and $FTpct$ should also both have positve relationships with $PTS$, as if you make a higher percentage of your shots, you will be scoring more points. I will first look at the relationship between $PTS$ and these 5 other variables.
+
+```{r DescriptivePlotsforPTS, eval=T, echo=F}
+attach(NBA2017)
+lm1 = lm(PTS ~ G, data=NBA2017)
+plot(PTS ~ G, 
+     main="PTS vs G",
+     xlab="Total Games Played (G)",
+     ylab="Career Average Points Per Game (PTS)",
+     pch=20,
+     col="darkblue")
+abline(lm1, lwd=3, col="orange")
+
+lm2 = lm(PTS ~ MP, data=NBA2017)
+plot(PTS ~ MP, 
+     main="PTS vs MP",
+     xlab="Career Average Minutes Played Per Game (MP)",
+     ylab="Career Average Points Per Game (PTS)",
+     pch=20,
+     col="dodgerblue")
+abline(lm2, lwd=3, col="darkorange")
+
+lm3 = lm(PTS ~ TRB, data=NBA2017)
+plot(PTS ~ TRB, 
+     main="PTS vs TRB",
+     xlab="Career Average Total Rebounds Played Per Game (MP)",
+     ylab="Career Average Points Per Game (PTS)",
+     pch=20,
+     col="darkgreen")
+abline(lm3, lwd=3, col="red")
+
+lm4 = lm(PTS ~ FGpct, data=NBA2017)
+plot(PTS ~ FGpct, 
+     main="PTS vs FGpct",
+     xlab="Career Average Field Goal Percentage (FGpct)",
+     ylab="Career Average Points Per Game (PTS)",
+     pch=20,
+     col="green")
+abline(lm4, lwd=3, col="darkred")
+
+lm5 = lm(PTS ~ FTpct, data=NBA2017)
+plot(PTS ~ FTpct, 
+     main="PTS vs FTpct",
+     xlab="Career Average Free Throw Percentage (FTpct)",
+     ylab="Career Average Points Per Game (PTS)",
+     pch=20,
+     col="orange")
+abline(lm5, lwd=3, col="darkblue")
+```
+
+From the plots above, it looks like all 5 of these variables have a possitive linear relationship with $PTS$, with $MP$ having the strongest relationship. For the other four variables, it is harder to tell if there is a linear relationship, but all of them look like they have possitive slopes.
+
+```{r Correlation, eval=T, echo=F}
+cor(NBA2017)
+```
+
+$G$ and $WS$ (Win Shares) have a high correlation, at around 0.72. This is interesting, it implies that players who have played in more games account for a higher Win share percentage. This makes sense, as the way Win Shares is calculated, it give players who have played in a larger number of games a higher value for $WS$.
+
+$PTS$ and $MP$ seem have to high correlation, at around 0.71, but that makes sense because the player needs to be on the court in order to score points. 
+
+$WS$ and $WS/48$ (Win Shares pers 48 minutes) have a high correlation, at around 0.8, which makes since as the variables are very closely related.
+
+The last point of interest here is the correlation between $FTpct$ and $TRB$, at -0.48. This likely represents how Power Forwards and Centers, who tend to get more rebounds, are often poor free throw shooters. There are some other negative correlations, but the rest are much smaller values.
+
+## Analysis of Data
+
+```{r GuessedModel, eval=T, echo=F}
+lm_guess = lm(PTS ~ G + MP + TRB + FGpct + FTpct, data=NBA2017)
+summary(lm_guess)
+```
+
+The output above shows the results for my Guessed Model, using $G$ (Games), $MP$ (Minutes Played), $TRB$ (Total Rebounds), $FGpct$ (Field goal Percentage) and $FTpct$ (Free throw Percentage) as predictors for $PTS$ (Points). We see that all of the predictors besides $TRB$ are signifcant at the $\alpha=0.05$ level. We also see that our model is significant. Our $R^2$ value of 0.607 tells us that roughly 61% of the variation in $PTS$ can be explained by these predictors. I will now create a Full Model, using all of the variables as predictors for $PTS$.
+
+```{r ModelSelection, eval=T, echo=F}
+lm_pts_full = lm(PTS ~ G + MP + TRB + AST + STL + BLK + FGpct + `3Ppct` + FTpct
+                 + WS + `WS/48`, data=NBA2017)
+summary(lm_pts_full)
+
+lm_pts2 = lm(PTS ~ . - STL - BLK - `3Ppct`, data = NBA2017)
+summary(lm_pts2)
+
+anova(lm_pts_full, lm_pts2)
+```
+
+The first results are from a running the full model, using all of the predictors for $PTS$, We can see that all of the predictors besides Steals ($STL$), Blocks ($BLK$) and 3 Point Percentage ($3Ppct$) are significant, when using a significance level of $\alpha=0.05$, in our model. We also see that our model itself is significant, with a p-value less than 2.2e-16, which is esentially equal to 0. From our $R^2$ value of 0.6862, we can say that roughly 68.62% of the variation in $PTS$ can be explained by these predictors. Below, we refit the model, exluding the 3 predictors listed above.
+
+The second results are from running the Reduced Model. Here, we see that all of the predictors are significant in the model, when using a significance level of $\alpha=0.05$. Again, the model is also significant. Interestingly, we have a lower $R^2$ value, 0.6842, than our full model, meaning that the full model is better. 
+
+The ANOVA results reinforce that the first, or Full, model is the better of the two, which we know from the high p-value of 0.5.
+
+```{r AICSelection,eval=T,echo=F}
+NBA2017_cleaned = na.omit(NBA2017)
+lm_pts_f2 = lm(PTS ~ ., data=NBA2017_cleaned)
+lm_pts_aic = step(lm_pts_f2, trace=0)
+summary(lm_pts_aic)
+```
+
+In order to perfrom AIC variable selection, we must remove any cases that have a $NA$ response. This is why only 379 of the 500 cases were used in this analysis. We get a $R^2$ value of roughly 68.42% for this model, which is about the same as both of the models above. AIC selection is not very good at predicting values outside of the dataset, but it rather focuses on finding the best fit for the data.
+
+Removing the missing cases will also allow to me to look at how the addition of 3-Point line changed the game. Interestingly, none of three variables of interest (that had missing values), $BLK$, $STL$ and $3Ppct$ are significant in the model. This leads me to believe that the addition of the 3 point line did not really change scoring too much. Or at least because most players do not tend to shoot many 3 pointers, this variable is not important for predicting $PTS$.
+
+```{r BICSelection, eval=T, echo=F}
+n = length(resid(lm_pts_f2))
+lm_BIC = step(lm_pts_f2, direction = "backward", k=log(n))
+```
+
+The model above was fitted using the Bayes Information Criterion (BIC) variable selection method. This method is similar to AIC, but it penalizes larger models more, so we would expect to see a smaller model. This is not the case, however, as we get the same model selected from AIC. We see that $3Ppct$ was removed first, and then $BLK$ and then $STL$. This would lead us to believe that the full model is our best model.
+
+## Discussion of Results
+
+Interestingly, the full model is the best fitting model I found, as it has the highest $R^2$ value of 0.6862. Taking out insignificant predictors from the model resulted in a lower $R^2$ value, which is not what I was expecting. This could mean that there are possibly some relationships between the various predictors. Overall, I would say that it is hard to estimate a player's points per game using his other statistics.
+
+Something else that I found interesting was that the addition of the 3 point does not seem to important for predicting $PTS$ (Points). When I performed Step Wise variable selection, I had to remove all cases with a $NA$ value. Only Steals ($STL$), Blocks ($BLK$) and 3 Point Percentage ($3Ppct$) have missing cases. So this variable selection only involved NBA players since 1979. I was expecting to see that $3Ppct$ would be significant in the model, but this is not what I found. Just like in the original full model, none of those 3 variables are significant. I think $STL$ might be an intersting variable to look at if we had player positions, as Guards often get more stealas and then could score on a fast break. Blocks by a Center/Power Forward could lead to a long pass and an assist. I think that $3Ppct$ is not significant in predicting $PTS$ because most players do not take many 3 point shots, besides the ones who are really good and take a lot. 
+
+## Bibliography 
+
+[NBA2017] can be found at: https://www.basketball-reference.com/awards/slam_500_greatest.html
+
+The list of players was selected by SLAM Magazine in 2011.
+
+## Code Appendix 
+
+```{r,eval=F,echo=T}
+###Data and Variables###
+<<InstallPackages>>
+
+<<LoadData>>
+
+<<ResponseVariable>>
+  
+  
+###Expectations###
+<<DescriptivePlotsforPTS>>
+
+<<Correlation>>
+  
+<<SummaryStats>>
+  
+  
+###Analysis and Results###
+<<GuessedModel>>  
+  
+<<ModelSelection>>
+  
+<<AICSelection>>
+  
+<<BICSelection>>
+
+```
+
+
